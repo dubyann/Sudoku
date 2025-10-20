@@ -1,3 +1,6 @@
+mod gameboard;
+
 fn main() {
-    println!("Hello, world!");
+    println!("Hello, Sudoku!");
+
 }
