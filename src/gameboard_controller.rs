@@ -321,30 +321,7 @@ impl GameboardController {
     /// 撤销：
     /// 1) 未选择格子：撤销最近一次用户输入（全局最近）
     /// 2) 已选择格子：只撤销该格子的最近一次输入
-    pub fn undo(&mut self) {
-        if self.changes.is_empty() || self.submitted {
-            return;
-        }
 
-        // 选择目标变更索引
-        let target_idx = if let Some([sx, sy]) = self.selected_cell {
-            // 从末尾向前寻找最近一次修改了该格子的记录；若该格无记录，则回退为全局最近
-            match self.changes.iter().rposition(|c| c.x == sx && c.y == sy) {
-                Some(idx) => Some(idx),
-                None => Some(self.changes.len() - 1),
-            }
-        } else {
-            Some(self.changes.len() - 1)
-        };
-
-        if let Some(idx) = target_idx {
-            let change = self.changes.remove(idx);
-            // 应用撤销：将该格子恢复为修改前的值
-            self.gameboard.set([change.x, change.y], change.prev);
-            // 重新计算无效格（该变更可能影响同行同列同宫）
-            self.recompute_invalid_cells();
-        }
-    }
 
     /// 重置为初始题目（initial_cells）
     pub fn reset(&mut self) {
