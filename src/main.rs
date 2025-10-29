@@ -16,8 +16,8 @@ use glutin_window::GlutinWindow;
 use opengl_graphics::{Filter, GlGraphics, GlyphCache, OpenGL, TextureSettings};
 use piston::event_loop::{EventLoop, EventSettings, Events};
 use piston::input::RenderEvent;
-use piston::window::WindowSettings;
 use piston::window::Window;
+use piston::window::WindowSettings;
 
 mod gameboard;
 mod gameboard_controller;
@@ -25,7 +25,8 @@ mod gameboard_view;
 
 fn main() {
     let opengl = OpenGL::V3_2;
-    let setting = WindowSettings::new("Sudoku", [512; 2])
+    // 初始窗口设置为纵向更高，确保棋盘下方的按钮可见
+    let setting = WindowSettings::new("Sudoku", [640, 750])
         .graphics_api(opengl)
         .exit_on_esc(true);
     let mut window: GlutinWindow = setting.build().expect("Could not create window");
@@ -33,7 +34,7 @@ fn main() {
     let mut gl = GlGraphics::new(opengl);
 
     // 随机生成题目，指定空格数量（传入空格数量）
-    let gameboard = Gameboard::generate_random(40);
+    let gameboard = Gameboard::generate_random(gameboard::DEFAULT_HOLES);
     let mut gameboard_controller = GameboardController::new(gameboard);
 
     let gameboard_view_settings = GameboardViewSettings::new();
@@ -52,6 +53,7 @@ fn main() {
         gameboard_controller.event(
             gameboard_view.settings.position,
             gameboard_view.settings.size,
+            gameboard_view.settings.window_size,
             &e,
         );
 
@@ -60,7 +62,7 @@ fn main() {
             match k {
                 Key::U => gameboard_controller.undo(),
                 Key::R => gameboard_controller.reset(),
-                Key::G => gameboard_controller.randomize(40),
+                Key::G => gameboard_controller.randomize(gameboard::DEFAULT_HOLES),
                 _ => {}
             }
         }

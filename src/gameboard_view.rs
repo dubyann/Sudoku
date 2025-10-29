@@ -1,9 +1,9 @@
 //! Gameboard view: render the Gameboard to the screen.
 
+use crate::gameboard_controller::GameboardController;
 use graphics::character::CharacterCache;
 use graphics::types::Color;
 use graphics::{Context, Graphics};
-use crate::gameboard_controller::GameboardController;
 
 /// Rendering settings for the board view.
 pub struct GameboardViewSettings {
@@ -137,28 +137,47 @@ impl GameboardView {
 
         // Draw selected cell background (selected_cell stored as [x, y]).
         if let Some(ind) = controller.selected_cell {
-            let pos = [inner_left + ind[0] as f64 * cell_size, inner_top + ind[1] as f64 * cell_size];
+            let pos = [
+                inner_left + ind[0] as f64 * cell_size,
+                inner_top + ind[1] as f64 * cell_size,
+            ];
             let cell_rect = [pos[0], pos[1], cell_size, cell_size];
             // subtle semi-transparent highlight (no thick border)
             Rectangle::new([0.9, 0.95, 1.0, 0.6]).draw(cell_rect, &c.draw_state, c.transform, g);
         }
 
-        // Draw characters with styling: fixed cells darker, invalid cells red
+        // Draw characters with styling: initial cells black; player input red
         // Choose font size relative to cell size for responsiveness
         let font_size = ((cell_size * 0.65) as u32).max(12);
 
         for row in 0..9 {
             for col in 0..9 {
                 let val = controller.gameboard.cells[row][col];
-                if val == 0 { continue; }
-
-                // choose color: invalid -> red, fixed -> darker, else text_color
-                let mut text_color = settings.text_color;
-                if controller.invalid_cells.contains(&[col, row]) {
-                    text_color = [1.0, 0.2, 0.2, 1.0];
-                } else if controller.initial_cells[row][col] != 0 {
-                    text_color = [0.0, 0.0, 0.0, 1.0];
+                if val == 0 {
+                    continue;
                 }
+
+                // 颜色策略：
+                // - 提交后：玩家输入正确显示绿色，错误显示红色
+                // - 提交前：玩家输入全程标红；初始题面为黑色
+                // - Show All 开启时跳过玩家输入的绘制（只显示初始题面）
+                let text_color = if controller.initial_cells[row][col] == 0 {
+                    if controller.show_all {
+                        continue; // Show All 开启时不绘制玩家输入
+                    }
+                    if controller.submitted {
+                        // 提交后：错误红色，正确绿色
+                        if controller.invalid_cells.contains(&[col, row]) {
+                            [1.0, 0.2, 0.2, 1.0] // 错误：红色
+                        } else {
+                            [0.2, 0.8, 0.2, 1.0] // 正确：绿色
+                        }
+                    } else {
+                        [1.0, 0.2, 0.2, 1.0] // 提交前：红色
+                    }
+                } else {
+                    [0.0, 0.0, 0.0, 1.0] // 初始题面：黑色
+                };
 
                 if let Some(ch) = std::char::from_digit(val as u32, 10) {
                     let cell_left = inner_left + col as f64 * cell_size;
@@ -176,7 +195,80 @@ impl GameboardView {
                             character.atlas_offset[1],
                             character.atlas_size[0],
                             character.atlas_size[1],
-                        ]).draw(
+                        ])
+                        .draw(
+                            character.texture,
+                            &c.draw_state,
+                            c.transform.trans(ch_x, ch_y),
+                            g,
+                        );
+                    }
+                }
+            }
+        }
+
+        // 显示全部答案（浅蓝色），覆盖所有可编辑格（含已输入），先绘制，单个提示会覆盖
+        if controller.show_all {
+            if let Some(solved) = controller.solved_cache {
+                for row in 0..9 {
+                    for col in 0..9 {
+                        if controller.initial_cells[row][col] != 0 {
+                            continue;
+                        }
+                        let val = solved[row][col];
+                        if val == 0 {
+                            continue;
+                        }
+                        if let Some(ch) = std::char::from_digit(val as u32, 10) {
+                            let cell_left = inner_left + col as f64 * cell_size;
+                            let cell_top = inner_top + row as f64 * cell_size;
+                            if let Ok(character) = glyphs.character(font_size, ch) {
+                                let glyph_w = character.atlas_size[0] as f64;
+                                let glyph_h = character.atlas_size[1] as f64;
+                                let ch_x =
+                                    cell_left + (cell_size - glyph_w) / 2.0 + character.left();
+                                let ch_y = cell_top + (cell_size + glyph_h) / 2.0 - character.top();
+                                let img = Image::new_color([0.2, 0.6, 1.0, 0.9]);
+                                img.src_rect([
+                                    character.atlas_offset[0],
+                                    character.atlas_offset[1],
+                                    character.atlas_size[0],
+                                    character.atlas_size[1],
+                                ])
+                                .draw(
+                                    character.texture,
+                                    &c.draw_state,
+                                    c.transform.trans(ch_x, ch_y),
+                                    g,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 绘制提示（蓝色），仅在该格当前为空时覆盖显示（单个提示优先覆盖）
+        if let Some((pos, val)) = controller.hint {
+            let col = pos[0];
+            let row = pos[1];
+            if controller.gameboard.cells[row][col] == 0 {
+                if let Some(ch) = std::char::from_digit(val as u32, 10) {
+                    let cell_left = inner_left + col as f64 * cell_size;
+                    let cell_top = inner_top + row as f64 * cell_size;
+                    if let Ok(character) = glyphs.character(font_size, ch) {
+                        let glyph_w = character.atlas_size[0] as f64;
+                        let glyph_h = character.atlas_size[1] as f64;
+                        let ch_x = cell_left + (cell_size - glyph_w) / 2.0 + character.left();
+                        let ch_y = cell_top + (cell_size + glyph_h) / 2.0 - character.top();
+                        let img = Image::new_color([0.2, 0.4, 1.0, 1.0]);
+                        img.src_rect([
+                            character.atlas_offset[0],
+                            character.atlas_offset[1],
+                            character.atlas_size[0],
+                            character.atlas_size[1],
+                        ])
+                        .draw(
                             character.texture,
                             &c.draw_state,
                             c.transform.trans(ch_x, ch_y),
@@ -224,23 +316,28 @@ impl GameboardView {
             inner_size,
             inner_size,
         ];
-        Rectangle::new_border([0.0, 0.0, 0.0, 0.08], 1.0).draw(pad_rect, &c.draw_state, c.transform, g);
+        Rectangle::new_border([0.0, 0.0, 0.0, 0.08], 1.0).draw(
+            pad_rect,
+            &c.draw_state,
+            c.transform,
+            g,
+        );
 
-        // Draw bottom-centered buttons (Undo / Reset / Random) as an overlay that stays inside window
-        let btn_labels = ["Undo", "Reset", "Random"];
+        // Draw bottom-centered buttons (Undo / Reset / Random / Hint / Show All / Submit)
+        let btn_labels = ["Undo", "Reset", "Random", "Hint", "Show All", "Submit"];
         let btn_font = settings.hud_font_size;
         let btn_w = settings.btn_width;
         let btn_h = settings.btn_height;
         let btn_spacing = settings.btn_spacing;
-        let total_w = btn_labels.len() as f64 * btn_w + (btn_labels.len() as f64 - 1.0) * btn_spacing;
-        // Prefer placing below the board, but clamp so buttons remain visible within the window
+        let total_w =
+            btn_labels.len() as f64 * btn_w + (btn_labels.len() as f64 - 1.0) * btn_spacing;
         let preferred_start_x = settings.position[0] + (settings.size - total_w) / 2.0;
-        let preferred_start_y = settings.position[1] + settings.size + 12.0; // gap below board
+        // 始终放在棋盘下方，固定间距，不再向窗口底部钳制（可能超出窗口但不遮挡棋盘）
         let margin = 8.0;
-        let start_x = preferred_start_x.max(margin).min(settings.window_size[0] - margin - total_w);
-        // clamp vertical: don't go beyond bottom of window
-        let bottom_limit_y = settings.window_size[1] - margin - btn_h;
-        let start_y = preferred_start_y.min(bottom_limit_y).max(margin);
+        let start_x = preferred_start_x
+            .max(margin)
+            .min(settings.window_size[0] - margin - total_w);
+        let start_y = settings.position[1] + settings.size + 12.0; // 固定在棋盘正下方
 
         for (i, &label) in btn_labels.iter().enumerate() {
             let bx = start_x + i as f64 * (btn_w + btn_spacing);
@@ -253,17 +350,33 @@ impl GameboardView {
             let is_hover = mx >= bx && mx < bx + btn_w && my >= by && my < by + btn_h;
             let is_active = is_hover && controller.mouse_pressed;
 
-            // choose background color based on state
-            let bg = if is_active {
-                settings.btn_active_color
-            } else if is_hover {
-                settings.btn_hover_color
+            // choose background color based on state (Submit 按钮用绿色)
+            let bg = if i == 5 {
+                // Submit 按钮特殊样式
+                if is_active {
+                    [0.3, 0.7, 0.3, 1.0] // 按下：深绿
+                } else if is_hover {
+                    [0.5, 0.9, 0.5, 1.0] // 悬停：亮绿
+                } else {
+                    [0.4, 0.8, 0.4, 1.0] // 默认：绿色
+                }
             } else {
-                settings.btn_bg_color
+                if is_active {
+                    settings.btn_active_color
+                } else if is_hover {
+                    settings.btn_hover_color
+                } else {
+                    settings.btn_bg_color
+                }
             };
 
             Rectangle::new(bg).draw(rect, &c.draw_state, c.transform, g);
-            Rectangle::new_border(settings.btn_border_color, 1.0).draw(rect, &c.draw_state, c.transform, g);
+            Rectangle::new_border(settings.btn_border_color, 1.0).draw(
+                rect,
+                &c.draw_state,
+                c.transform,
+                g,
+            );
 
             // draw label centered
             let mut text_w = 0.0;
@@ -284,7 +397,13 @@ impl GameboardView {
                         glyph.atlas_offset[1],
                         glyph.atlas_size[0],
                         glyph.atlas_size[1],
-                    ]).draw(glyph.texture, &c.draw_state, c.transform.trans(gx, gy), g);
+                    ])
+                    .draw(
+                        glyph.texture,
+                        &c.draw_state,
+                        c.transform.trans(gx, gy),
+                        g,
+                    );
                     tx += glyph.advance_width();
                 }
             }

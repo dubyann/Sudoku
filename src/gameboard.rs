@@ -2,6 +2,8 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 
 pub const SIZE: usize = 9;
+// Default number of holes (tweak to adjust difficulty)
+pub const DEFAULT_HOLES: usize = 40;
 
 #[derive(Clone)]
 pub struct Gameboard {
@@ -10,7 +12,9 @@ pub struct Gameboard {
 
 impl Gameboard {
     pub fn new() -> Self {
-        Self { cells: [[0; SIZE]; SIZE] }
+        Self {
+            cells: [[0; SIZE]; SIZE],
+        }
     }
 
     pub fn from_cells(cells: [[u8; SIZE]; SIZE]) -> Self {
@@ -31,14 +35,22 @@ impl Gameboard {
     }
 
     pub fn is_valid_move(&self, row: usize, col: usize, num: u8) -> bool {
+        // Ignore the value at (row, col) itself when validating
         for i in 0..SIZE {
-            if self.cells[row][i] == num || self.cells[i][col] == num { return false; }
+            if i != col && self.cells[row][i] == num {
+                return false;
+            }
+            if i != row && self.cells[i][col] == num {
+                return false;
+            }
         }
         let box_row = row / 3 * 3;
         let box_col = col / 3 * 3;
-        for r in box_row..box_row+3 {
-            for c in box_col..box_col+3 {
-                if self.cells[r][c] == num { return false; }
+        for r in box_row..box_row + 3 {
+            for c in box_col..box_col + 3 {
+                if !(r == row && c == col) && self.cells[r][c] == num {
+                    return false;
+                }
             }
         }
         true
@@ -51,7 +63,9 @@ impl Gameboard {
                     for num in 1..=9 {
                         if self.is_valid_move(row, col, num) {
                             self.cells[row][col] = num;
-                            if self.solve() { return true; }
+                            if self.solve() {
+                                return true;
+                            }
                             self.cells[row][col] = 0;
                         }
                     }
@@ -90,7 +104,9 @@ impl Gameboard {
                     for &num in &nums {
                         if Self::is_valid_static(board, row, col, num) {
                             board[row][col] = num;
-                            if Self::fill_board(board) { return true; }
+                            if Self::fill_board(board) {
+                                return true;
+                            }
                             board[row][col] = 0;
                         }
                     }
@@ -103,13 +119,17 @@ impl Gameboard {
 
     fn is_valid_static(board: &[[u8; SIZE]; SIZE], row: usize, col: usize, num: u8) -> bool {
         for i in 0..SIZE {
-            if board[row][i] == num || board[i][col] == num { return false; }
+            if board[row][i] == num || board[i][col] == num {
+                return false;
+            }
         }
         let box_row = row / 3 * 3;
         let box_col = col / 3 * 3;
-        for r in box_row..box_row+3 {
-            for c in box_col..box_col+3 {
-                if board[r][c] == num { return false; }
+        for r in box_row..box_row + 3 {
+            for c in box_col..box_col + 3 {
+                if board[r][c] == num {
+                    return false;
+                }
             }
         }
         true
